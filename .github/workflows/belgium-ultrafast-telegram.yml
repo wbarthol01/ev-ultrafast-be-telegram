@@ -1,0 +1,111 @@
+
+name: Belgium ultrafast EV openings -> Telegram
+
+on:
+  schedule:
+    - cron: "0 */3 * * *"         # every 3 hours (UTC)
+  workflow_dispatch:
+
+jobs:
+  post_openings:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Node (ES modules ready)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Fetch OCM and post to Telegram
+        env:
+          OCM_KEY: ${{ secrets.OCM_KEY }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          # Create script
+          cat > script.mjs <<'JS'
+          import fetch from "node-fetch";
+
+          const OCM_KEY = process.env.OCM_KEY;
+          const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
+          const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+
+          const isUltrafast = (c) => {
+            const kw = c.PowerKW || c.RatedPowerKW || 0;
+            const isDC = (c.CurrentType?.Description || "").toLowerCase().includes("dc");
+            return isDC && kw >= 150;
+          };
+          const bandTag = (kw) => kw >= 400 ? "400+ kW" : kw >= 200 ? "200–399 kW" : "150–199 kW";
+
+          async function sendTelegram(text) {
+            const url = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`;
+            const payload = { chat_id: TELEGRAM_CHAT_ID, text, parse_mode: "HTML", disable_web_page_preview: false };
+            const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+            const body = await r.text();
+            console.log("Telegram status:", r.status);
+            console.log("Telegram response:", body);
+            if (!r.ok) throw new Error(`Telegram failed: ${r.status} ${body}`);
+          }
+
+          (async () => {
+            // OCM call (HEADER auth recommended)
+            const ua = "BE-Ultrafast-Openings-Bot/1.0 (GitHub Actions)";
+            const endpoint = "https://api.openchargemap.io/v3/poi/?output=json&countrycode=BE&maxresults=500";
+            const res = await fetch(endpoint, {
+              headers: { "User-Agent": ua, "Accept": "application/json", "X-API-Key": OCM_KEY }
+            });
+
+            const ctype = (res.headers.get("content-type") || "").toLowerCase();
+            if (!res.ok) {
+              const errText = await res.text();
+              console.error("OCM error status:", res.status);
+              console.error("OCM error body:", errText);
+              throw new Error(`OCM request failed: ${res.status} ${errText}`);
+            }
+            if (!ctype.includes("application/json")) {
+              const errText = await res.text();
+              console.error("OCM returned non-JSON:", errText);
+              throw new Error(`OCM non-JSON response: ${errText}`);
+            }
+
+            const data = await res.json();
+            console.log("OCM total:", data.length);
+
+            const cand = data.filter(d => (d.Connections||[]).some(isUltrafast) && d.StatusType?.IsOperational);
+            console.log("Ultrafast candidates:", cand.length);
+            if (!cand.length) return;
+
+            const seen = new Set();
+            const msgs = [];
+            for (const st of cand) {
+              const op  = st.OperatorInfo?.Title || "EV Operator";
+              const lat = st.AddressInfo?.Latitude?.toFixed(4);
+              const lon = st.AddressInfo?.Longitude?.toFixed(4);
+              const key = `${lat},${lon}-${op}`;
+              if (seen.has(key)) continue; seen.add(key);
+
+              const connectors = (st.Connections||[]).filter(isUltrafast);
+              if (!connectors.length) continue;
+
+              const maxKw = Math.max(...connectors.map(c => c.PowerKW || 0));
+              const band  = bandTag(maxKw);
+              const city  = st.AddressInfo?.Town || "Belgium";
+              const title = `[${op} • ${band}] ${city} — New ultrafast site`;
+
+              // OSM "View Larger Map" deep link
+              const mapView = `https://www.openstreetmap.org/?mlat=${st.AddressInfo?.Latitude}&mlon=${st.AddressInfo?.Longitude}#map=16/${st.AddressInfo?.Latitude}/${st.AddressInfo?.Longitude}`;
+              const details = `${st.AddressInfo?.Title || ""}, ${st.AddressInfo?.Town || ""}, Belgium`;
+              const msg = `🚗⚡ <b>${title}</b>\n${details}\nPower: up to <b>${maxKw} kW</b> DC\nOperator: ${op}\nView Larger Map: ${mapView}\nSource: Open Charge Map`;
+
+              msgs.push(msg);
+            }
+
+            // Safety cap to avoid flooding
+            for (const m of msgs.slice(0, 10)) await sendTelegram(m);
+          })().catch(e => { console.error(e); process.exit(1); });
+          JS
+
+          # Initialize minimal package.json with ES module type
+          echo '{"name":"ev-ultrafast-be-telegram","version":"1.0.0","type":"module"}' > package.json
+
+          npm i node-fetch >/dev/null 2>&1
+          node script.mjs
