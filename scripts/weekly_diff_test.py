@@ -39,7 +39,11 @@ def fetch_locations() -> List[Dict[str, Any]]:
     r = requests.get(ROAD_JSON_URL, timeout=90)
     r.raise_for_status()
     data = r.json()
-    items = data.get("data") or data.get("locations") or (data if isinstance(data, list) else [])
+    # FIX: eerst lijst vs dict onderscheiden
+    if isinstance(data, list):
+        items = data
+    else:
+        items = data.get("data") or data.get("locations") or []
     log(f"Fetched feed: {len(items)} locations (raw).")
     return items
 
@@ -140,6 +144,11 @@ def main():
 
     # Huidige feed
     curr = fetch_locations()
+    if not curr:
+        post_to_telegram("<b>Ultrafast DC (BE) — Weektest</b>\nFeed lijkt leeg. Probeer later opnieuw.")
+        log("Feed leeg; abort zonder baseline-update.")
+        return
+
     idx_curr, st_curr = build_index(curr)
 
     # Vorige snapshot
