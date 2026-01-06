@@ -1,0 +1,4 @@
+[2026-01-06T13:47:41.902699Z] Running weekly diff test (range_days=7)
+[2026-01-06T13:47:44.258388Z] Fetched feed: 2884 locations (raw).
+[2026-01-06T13:47:44.679180Z] Telegram response status=200 body={'ok': True, 'result': {'message_id': 4, 'sender_chat': {'id': -1003665902250, 'title': 'Ultrafast Charging Belgium', 'username': 'ultrafastchargingbelgium', 'type': 'channel'}, 'chat': {'id': -1003665902250, 'title': 'Ultrafast Charging Belgium', 'username': 'ultrafastchargingbelgium', 'type': 'channel'}, 'date': 1767707264, 'text': 'Ultrafast DC (BE) — Weektest\nGeen vorige snapshot gevonden in de repo.\nWe hebben de feed zojuist opgehaald en als baseline opgeslagen.\nProbeer over een paar dagen opnieuw voor een echte weekdiff.', 'entities': [{'offset': 0, 'length': 28, 'type': 'bold'}]}}
+[2026-01-06T13:47:44.910842Z] Baseline snapshot opgeslagen (eerste run).
