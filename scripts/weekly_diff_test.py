@@ -2,7 +2,7 @@
 #!/usr/bin/env python3
 # Eén testpost: verschil van de afgelopen week (instelbaar via RANGE_DAYS; default 7).
 # Vergelijkt huidige Road feed met vorige snapshot in data/snapshot_prev.json.
-# Post altijd (FORCE).
+# Post altijd (handmatig gestart via workflow_dispatch).
 
 import json, os, datetime
 import requests
@@ -12,18 +12,18 @@ from typing import List, Dict, Any
 # --- Config ---
 ROAD_JSON_URL = "https://roaming.road.io/files/9ef09c78-2666-418a-aa45-4f2261e2e305/locations.json?force=true"
 
-# Telegram
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "")
-TELEGRAM_SEND_MSG  = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+# Telegram (LET OP: we lezen 'TELEGRAM_TOKEN' en 'TELEGRAM_CHAT_ID' uit de env)
+TELEGRAM_TOKEN   = os.environ.get("TELEGRAM_TOKEN", "")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
+TELEGRAM_SEND_MSG = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
 
 # Ultrafast drempel (AFIR-consistent: DC >= 150 kW)
 MIN_KW = 150.0
 
 # Bestanden
-STATE_DIR     = Path("data")
-SNAPSHOT_PATH = STATE_DIR / "snapshot_prev.json"   # vorige snapshot
-CHANGELOG_PATH= STATE_DIR / "changelog.log"
+STATE_DIR      = Path("data")
+SNAPSHOT_PATH  = STATE_DIR / "snapshot_prev.json"   # vorige snapshot
+CHANGELOG_PATH = STATE_DIR / "changelog.log"
 
 # Limits
 MAX_LIST_ITEMS = 20
@@ -132,8 +132,8 @@ def post_to_telegram(text: str):
 
 def main():
     # Veiligheid
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        raise SystemExit("TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID ontbreken in env.")
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+        raise SystemExit("TELEGRAM_TOKEN/TELEGRAM_CHAT_ID ontbreken in env.")
 
     range_days = int(os.environ.get("RANGE_DAYS","7"))
     log(f"Running weekly diff test (range_days={range_days})")
@@ -151,7 +151,6 @@ def main():
             "Probeer over een paar dagen opnieuw voor een echte weekdiff."
         )
         post_to_telegram(msg)
-        # baseline opslaan
         STATE_DIR.mkdir(parents=True, exist_ok=True)
         with open(SNAPSHOT_PATH, "w", encoding="utf-8") as f:
             json.dump(curr, f, ensure_ascii=False, indent=2)
@@ -210,8 +209,7 @@ def main():
 
     post_to_telegram("\n".join(message))
 
-    # NB: Voor test laten we de baseline staan (niet overschrijven). Wil je de baseline
-    # updaten na de test, haal commentaar van de volgende regels:
+    # (optioneel) baseline na test updaten:
     # with open(SNAPSHOT_PATH, "w", encoding="utf-8") as f:
     #     json.dump(curr, f, ensure_ascii=False, indent=2)
     # log("Baseline geüpdatet na test.")
